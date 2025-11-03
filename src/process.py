@@ -255,3 +255,22 @@ class FileProcessor(BaseProcessor):
             raise ValueError("The path is required in the source settings.")
         
         return True
+
+class SQLProcessor(BaseProcessor):
+    def _read_source(self):
+        spark = self.spark
+        settings = self.settings
+        sql_query = settings["source"]["query"]
+
+        df = spark.sql(sql_query)
+
+        return df
+
+    def _validate_settings(self):
+        settings = self.settings
+        if "source" not in settings:
+            raise ValueError("The source settings are required.")
+        if "query" not in settings["source"]:
+            raise ValueError("The query is required in the source settings.")
+
+        return True
