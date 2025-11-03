@@ -203,3 +203,55 @@ class BaseProcessor(ABC):
             logger.error("An error occurred: %s", str(e))
             logger.info("Data processing finished with errors.")
             raise e
+
+class FileProcessor(BaseProcessor):
+    def _read_source(self):
+        spark = self.spark
+        settings = self.settings
+
+        # TODO: It's necessary to inferschema without autoloader delta feature.
+        # We must to replace it by a tool autoloader like ASAP!
+        if settings["source"]["format"] != "delta":
+            if settings["source"]["options"]["inferSchema"] != 'true':
+                if "schema" in settings["source"]:
+                    try:
+                        schema = StructType.fromJson(settings["source"]["schema"])
+                    except Exception as e:
+                        raise ValueError("Error on schema json.", e)
+                else:
+                    raise ValueError("No schema found on source.options.")
+            else:
+                static_df = (spark
+                        .read
+                        .format(settings["source"]["format"])
+                        .options(**settings["source"]["options"])
+                        .load(settings["source"]["path"])
+                )
+                schema = static_df.schema
+                            
+            # maxFilesPerTrigger=1
+            df = (
+                spark.readStream
+                    .format(settings["source"]["format"])
+                    .options(**settings["source"]["options"])
+                    .schema(schema)
+                    .load(settings["source"]["path"])
+            )
+        else:
+            df = (
+                spark.readStream
+                    .format(settings["source"]["format"])
+                    .load(settings["source"]["path"])
+            )
+        return df
+
+    def _validate_settings(self):
+        settings = self.settings
+        if "source" not in settings:
+            raise ValueError("The source settings are required.")
+        if "format" not in settings["source"]:
+            raise ValueError("The format is required in the source settings.")
+        if "path" not in settings["source"]:
+            raise ValueError("The path is required in the source settings.")
+        
+        return True
