@@ -1,0 +1,33 @@
+{
+    "id": "{{ settings.project }}_{{ settings.layer }}.{{ settings.subject }}_{{ settings.table }}",
+    "version": "{{ settings.version or '1.0' }}",
+    "active": "{{ settings.active or 'true' }}",
+    "type_processing": "{{ settings.type_processing or 'batch' }}",
+    "datalake_path": "{{ settings.datalake_path or null}}",
+    "step_silver_to_gold": {
+        "type_processing": "{{ settings.type_processing or 'batch' }}",
+        "source": {
+            "query": "{{ settings.step_silver_to_gold.source.query }}"
+        },
+        "target": {
+            "catalog_name": "{{ settings.catalog_name or 'datalake' }}",
+            "database_name": "{{ settings.project }}_gold",
+            "database_path": "{{ settings.datalake_path }}-gold/{{ settings.project }}_gold",
+            "table_name": "{{ settings.table }}",
+            "path": "{{ settings.datalake_path }}-gold/datalake-gold-{{ settings.project }}-{{ settings.subject }}/{{ settings.subject }}/{{ settings.table }}",
+            "format": "delta",
+            "options": {
+                "primary_key": "{{ settings.step_silver_to_gold.target.options.primary_key or null }}",
+                "partition_by": "{{ settings.step_silver_to_gold.target.options.partition_by or null }}",
+                "sequence_by": "{{ settings.step_silver_to_gold.target.options.sequence_by or null }}",
+                "apply_as_delete": "{{ settings.step_silver_to_gold.target.options.apply_as_delete or null }}",
+                "mode": "{{ settings.step_silver_to_gold.target.options.mode or 'overwrite' }}",
+                "checkpoint_location": "{{ settings.datalake_path }}-gold/datalake-gold-{{ settings.project }}-{{ settings.subject }}/_checkpoints/{{ settings.subject }}/{{ settings.table }}"
+            },
+            "sql_transformations": {
+                "10-add-gold-columns": [ "current_timestamp() _gold_created_at" ]
+            },
+            "drop_columns": [ "_silver_created_at" ]
+        }
+    }
+}
