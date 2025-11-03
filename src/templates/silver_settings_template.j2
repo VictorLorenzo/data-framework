@@ -1,0 +1,71 @@
+{
+    "id": "{{ settings.project }}_{{ settings.layer }}.{{ settings.subject }}_{{ settings.table }}",
+    "version": "{{ settings.version or '1.0' }}",
+    "active": "{{ settings.active or 'true' }}",
+    "type_processing": "{{ settings.type_processing or 'batch' }}",
+    "datalake_path": "{{ settings.datalake_path or null}}",
+    "step_raw_to_bronze": {
+        "type_processing": "{{ settings.type_processing or 'batch' }}",
+        "source": {
+            "format": "{{ settings.step_raw_to_bronze.source.format or null }}",
+            {% if settings.step_raw_to_bronze.source.schema %}
+            "schema": "{{ settings.step_raw_to_bronze.source.schema }}",
+            {% endif %}
+            "options": {
+                "inferSchema": "{{ settings.step_raw_to_bronze.source.options.inferSchema or 'true' }}",
+                "header": "{{ settings.step_raw_to_bronze.source.options.header or null }}",
+                "delimiter": "{{ settings.step_raw_to_bronze.source.options.delimiter or null }}",
+                "quote": "{{ settings.step_raw_to_bronze.source.options.quote or null }}"
+            },
+            "path": "{{ settings.datalake_path }}-landing/datalake-raw-{{ settings.project }}-{{ settings.subject }}/{{ settings.subject }}/{{ settings.table }}"
+        },
+        "target": {
+            "catalog_name": "{{ settings.catalog_name or 'datalake' }}",
+            "database_name": "{{ settings.project }}_bronze",
+            "database_path": "{{ settings.datalake_path }}-bronze/{{ settings.project }}_bronze",
+            "table_name": "{{ settings.table }}",
+            "path": "{{ settings.datalake_path }}-bronze/datalake-bronze-{{ settings.project }}-{{ settings.subject }}/{{ settings.subject }}/{{ settings.table }}",
+            "format": "delta",
+            "options": {
+                "primary_key": "{{ settings.step_raw_to_bronze.target.options.primary_key or null }}",
+                "partition_by": "{{ settings.step_raw_to_bronze.target.options.partition_by or null }}",
+                "sequence_by": "{{ settings.step_raw_to_bronze.target.options.sequence_by or null }}",
+                "apply_as_delete": "{{ settings.step_raw_to_bronze.target.options.apply_as_delete or null }}",
+                "mode": "{{ settings.step_raw_to_bronze.target.options.mode }}",
+                "checkpoint_location": "{{ settings.datalake_path }}-bronze/datalake-bronze-{{ settings.project }}-{{ settings.subject }}/_checkpoints/{{ settings.subject }}/{{ settings.table }}"
+            },
+            "sql_transformations": {
+                "10-add-bronze-columns": [ "input_file_name() _filename", "current_timestamp() _bronze_created_at" ]
+            },
+            "drop_columns": []
+        }
+    },
+    "step_bronze_to_silver": {
+        "type_processing": "{{ settings.type_processing or 'batch' }}",
+        "source": {
+            "format": "{{ settings.step_bronze_to_silver.source.format or 'delta' }}",
+            "path": "{{ settings.datalake_path }}-bronze/datalake-bronze-{{ settings.project }}-{{ settings.subject }}/{{ settings.subject }}/{{ settings.table }}",
+            "options": "{{ settings.step_bronze_to_silver.source.options or null }}"
+        },
+        "target": {
+            "catalog_name": "{{ settings.catalog_name or 'datalake' }}",
+            "database_name": "{{ settings.project }}_silver",
+            "database_path": "{{ settings.datalake_path }}-silver/{{ settings.project }}_silver",
+            "table_name": "{{ settings.table }}",
+            "path": "{{ settings.datalake_path }}-silver/datalake-silver-{{ settings.project }}-{{ settings.subject }}/{{ settings.subject }}/{{ settings.table }}",
+            "format": "delta",
+            "options": {
+                "primary_key": "{{ settings.step_bronze_to_silver.target.options.primary_key or null }}",
+                "partition_by": "{{ settings.step_bronze_to_silver.target.options.partition_by or null }}",
+                "sequence_by": "{{ settings.step_bronze_to_silver.target.options.sequence_by or null }}",
+                "apply_as_delete": "{{ settings.step_bronze_to_silver.target.options.apply_as_delete or null }}",
+                "mode": "{{ settings.step_bronze_to_silver.target.options.mode }}",
+                "checkpoint_location": "{{ settings.datalake_path }}-silver/datalake-silver-{{ settings.project }}-{{ settings.subject }}/_checkpoints/{{ settings.subject }}/{{ settings.table }}"
+            },
+            "sql_transformations": {
+                "10-add-silver-columns": [ "current_timestamp() _silver_created_at" ]
+            },
+            "drop_columns": [ "_bronze_created_at" ]
+        }
+    }
+}
