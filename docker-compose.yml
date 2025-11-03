@@ -1,0 +1,30 @@
+version: "3"
+
+services:
+  spark-notebook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spark-notebook
+    user: root
+    environment:
+      - JUPYTER_ENABLE_LAB="yes"
+      - GRANT_SUDO="yes"
+    volumes:
+      - ./src:/home/jovyan/src
+      - ./tests:/home/jovyan/tests
+      - ./run_tests.ipynb:/home/jovyan/run_tests.ipynb
+      - ./run_tests.py:/home/jovyan/run_tests.py
+      - ./jupyter-config/spark-defaults.conf:/usr/local/spark/conf/spark-defaults.conf
+      - ./setup.py:/home/jovyan/setup.py
+      - ./README.md:/home/jovyan/README.md
+      - ./dist:/home/jovyan/dist/
+
+    ports:
+      - "8888:8888"
+      - "4040:4040"
+
+networks:
+  default:
+    name: poc
+    external: true
