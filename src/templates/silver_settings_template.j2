@@ -20,7 +20,7 @@
             "path": "{{ settings.datalake_path }}-landing/datalake-raw-{{ settings.project }}-{{ settings.subject }}/{{ settings.subject }}/{{ settings.table }}"
         },
         "target": {
-            "catalog_name": "{{ settings.catalog_name or 'datalake' }}",
+            "catalog_name": "bronze",
             "database_name": "{{ settings.project }}_bronze",
             "database_path": "{{ settings.datalake_path }}-bronze/{{ settings.project }}_bronze",
             "table_name": "{{ settings.table }}",
@@ -48,7 +48,7 @@
             "options": "{{ settings.step_bronze_to_silver.source.options or null }}"
         },
         "target": {
-            "catalog_name": "{{ settings.catalog_name or 'datalake' }}",
+            "catalog_name": "silver",
             "database_name": "{{ settings.project }}_silver",
             "database_path": "{{ settings.datalake_path }}-silver/{{ settings.project }}_silver",
             "table_name": "{{ settings.table }}",

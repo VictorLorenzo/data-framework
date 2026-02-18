@@ -26,10 +26,15 @@ class BaseProcessor(ABC):
         logger = self.logger
         settings = self.settings
         database_name = settings['target']['database_name']
-        database_location = settings['target']['database_path']
+        database_location = self._normalize_uri_for_catalog(settings['target']['database_path'])
+        catalog_name = settings['target'].get('catalog_name', '')
 
         try:
-            spark.sql(f"CREATE DATABASE IF NOT EXISTS {database_name} LOCATION '{database_location}'")
+            if catalog_name and catalog_name != 'datalake':
+                spark.catalog.setCurrentCatalog(catalog_name)
+                spark.sql(f"CREATE DATABASE IF NOT EXISTS {database_name} LOCATION '{database_location}'")
+            else:
+                spark.sql(f"CREATE DATABASE IF NOT EXISTS {database_name} LOCATION '{database_location}'")
             logger.info(f"Database {database_name} created successfully.")
         except Exception as e:
             logger.error("An error occurred while creating the database: %s", str(e))
@@ -60,6 +65,14 @@ class BaseProcessor(ABC):
 
         return df
 
+    @staticmethod
+    def _normalize_uri_for_catalog(path):
+        """Normalize s3a:// to s3:// for Unity Catalog compatibility.
+        UC credential vending only accepts s3:// scheme."""
+        if path and path.startswith("s3a://"):
+            return "s3://" + path[len("s3a://"):]
+        return path
+
     def _create_table(self, schema):
         spark = self.spark
         logger = self.logger
@@ -67,14 +80,19 @@ class BaseProcessor(ABC):
         database_name = settings['target']['database_name']
         table_name = settings['target']['table_name']
         table_path = settings['target']['path']
-        table_full_name = f"{database_name}.{table_name}"
+        catalog_location = self._normalize_uri_for_catalog(table_path)
+        catalog_name = settings['target'].get('catalog_name', '')
+        if catalog_name and catalog_name != 'datalake':
+            table_full_name = f"{catalog_name}.{database_name}.{table_name}"
+        else:
+            table_full_name = f"{database_name}.{table_name}"
 
         try:
             if not DeltaTable.isDeltaTable(spark, table_path):
                 delta_table_builder = (
                     DeltaTable.createIfNotExists(spark)
                     .tableName(table_full_name)
-                    .location(table_path)
+                    .location(catalog_location)
                     .comment(f"Table {table_full_name} created by framework.")
                     .addColumns(schema)
                 )

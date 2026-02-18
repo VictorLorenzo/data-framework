@@ -7,8 +7,8 @@ import json
 import pydash
 from pydantic import ValidationError
 
-from src.validation.gold_settings_schema import GoldSettingsModel
-from src.validation.silver_settings_schema import SilverSettingsModel
+from .validation.gold_settings_schema import GoldSettingsModel
+from .validation.silver_settings_schema import SilverSettingsModel
 
 class TemplateRenderError(Exception):
     def __init__(self, original_exception):

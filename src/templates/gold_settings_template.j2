@@ -10,7 +10,7 @@
             "query": "{{ settings.step_silver_to_gold.source.query }}"
         },
         "target": {
-            "catalog_name": "{{ settings.catalog_name or 'datalake' }}",
+            "catalog_name": "gold",
             "database_name": "{{ settings.project }}_gold",
             "database_path": "{{ settings.datalake_path }}-gold/{{ settings.project }}_gold",
             "table_name": "{{ settings.table }}",
