@@ -25,17 +25,14 @@ class BaseProcessor(ABC):
         spark = self.spark
         logger = self.logger
         settings = self.settings
+        catalog_name = settings['target']['catalog_name']
         database_name = settings['target']['database_name']
         database_location = self._normalize_uri_for_catalog(settings['target']['database_path'])
-        catalog_name = settings['target'].get('catalog_name', '')
+        fully_qualified_name = f"{catalog_name}.{database_name}"
 
         try:
-            if catalog_name and catalog_name != 'datalake':
-                spark.catalog.setCurrentCatalog(catalog_name)
-                spark.sql(f"CREATE DATABASE IF NOT EXISTS {database_name} LOCATION '{database_location}'")
-            else:
-                spark.sql(f"CREATE DATABASE IF NOT EXISTS {database_name} LOCATION '{database_location}'")
-            logger.info(f"Database {database_name} created successfully.")
+            spark.sql(f"CREATE DATABASE IF NOT EXISTS {fully_qualified_name} LOCATION '{database_location}'")
+            logger.info(f"Database {fully_qualified_name} created successfully.")
         except Exception as e:
             logger.error("An error occurred while creating the database: %s", str(e))
             raise e
@@ -77,31 +74,32 @@ class BaseProcessor(ABC):
         spark = self.spark
         logger = self.logger
         settings = self.settings
+        catalog_name = settings['target']['catalog_name']
         database_name = settings['target']['database_name']
         table_name = settings['target']['table_name']
         table_path = settings['target']['path']
         catalog_location = self._normalize_uri_for_catalog(table_path)
-        catalog_name = settings['target'].get('catalog_name', '')
-        if catalog_name and catalog_name != 'datalake':
-            table_full_name = f"{catalog_name}.{database_name}.{table_name}"
-        else:
-            table_full_name = f"{database_name}.{table_name}"
+        table_two_part_name = f"{database_name}.{table_name}"
 
         try:
-            if not DeltaTable.isDeltaTable(spark, table_path):
-                delta_table_builder = (
-                    DeltaTable.createIfNotExists(spark)
-                    .tableName(table_full_name)
-                    .location(catalog_location)
-                    .comment(f"Table {table_full_name} created by framework.")
-                    .addColumns(schema)
+            spark.catalog.setCurrentCatalog(catalog_name)
+            if not DeltaTable.isDeltaTable(spark, catalog_location):
+                columns_ddl = ", ".join(
+                    [f"`{field.name}` {field.dataType.simpleString()}{'' if field.nullable else ' NOT NULL'}"
+                     for field in schema.fields]
                 )
-                delta_table = delta_table_builder.execute()
-                logger.info(f"Table {table_path} created successfully.")
-                return delta_table
+                create_sql = (
+                    f"CREATE TABLE IF NOT EXISTS {table_two_part_name} "
+                    f"({columns_ddl}) "
+                    f"USING DELTA "
+                    f"LOCATION '{catalog_location}' "
+                    f"COMMENT 'Table {table_two_part_name} created by framework.'"
+                )
+                spark.sql(create_sql)
+                logger.info(f"Table {catalog_location} created successfully.")
             else:
-                logger.info(f"Table {table_path} already exists.")
-                return DeltaTable.forPath(spark, table_path)
+                logger.info(f"Table {catalog_location} already exists.")
+            return DeltaTable.forPath(spark, catalog_location)
         except Exception as e:
             logger.error("An error occurred while creating the table: %s", str(e))
             raise e
@@ -175,8 +173,8 @@ class BaseProcessor(ABC):
             writer = (
                 df.writeStream
                 .format(settings["target"]["format"])
-                .option("path", settings["target"]["path"])
-                .option("checkpointLocation", settings["target"]["options"]["checkpoint_location"])
+                .option("path", self._normalize_uri_for_catalog(settings["target"]["path"]))
+                .option("checkpointLocation", self._normalize_uri_for_catalog(settings["target"]["options"]["checkpoint_location"]))
                 .outputMode(settings["target"]["options"]["mode"])
                 .foreachBatch(self._foreach_batch)
                 .queryName(f"writing_{type_processing}_{settings['target']['database_name']}_{settings['target']['table_name']}")
