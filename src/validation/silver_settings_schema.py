@@ -22,7 +22,7 @@ class SourceModel(BaseModel):
     options: Optional[SourceOptionsModel] = None
 
 class TargetModel(BaseModel):
-    catalog_name: Optional[str] = 'datalake'
+    catalog_name: Optional[str] = 'datalake_uc'
     database_name: Optional[constr(pattern=r'^[a-zA-Z0-9_]+$')] = None
     database_path: Optional[constr(pattern=r'^(s3a://[\w.-]+/?|/[A-Za-z0-9_/-]+)$')] = None
     table_name: Optional[str] = None
@@ -48,4 +48,4 @@ class SilverSettingsModel(BaseModel):
     type_processing: Optional[constr(pattern=r'^(batch|streaming)$')] = 'batch'
     version: Optional[constr(pattern=r'^\d+\.\d+$')] = '1.0'
     active: Optional[constr(pattern=r'^(true|false)$')] = 'true'
-    catalog_name: Optional[str] = 'datalake'
+    catalog_name: Optional[str] = 'datalake_uc'
