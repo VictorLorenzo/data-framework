@@ -31,8 +31,23 @@ class BaseProcessor(ABC):
         fully_qualified_name = f"{catalog_name}.{database_name}"
 
         try:
-            spark.sql(f"CREATE DATABASE IF NOT EXISTS {fully_qualified_name} LOCATION '{database_location}'")
-            logger.info(f"Database {fully_qualified_name} created successfully.")
+            # UCSingleCatalog v0.2.1 createNamespace() does NOT handle
+            # IF NOT EXISTS properly — it propagates the 409 ALREADY_EXISTS
+            # from the UC server instead of silently succeeding.
+            # We catch that specific error and treat it as a no-op.
+            try:
+                spark.sql(f"CREATE DATABASE IF NOT EXISTS {fully_qualified_name} LOCATION '{database_location}'")
+                logger.info(f"Database {fully_qualified_name} created successfully.")
+            except Exception as db_err:
+                if "ALREADY_EXISTS" in str(db_err):
+                    logger.info(f"Database {fully_qualified_name} already exists, skipping creation.")
+                else:
+                    raise
+
+            # Also create schema in spark_catalog so Delta IcebergConverter
+            # post-commit hook can find it (it uses SessionCatalog internally).
+            spark.sql(f"CREATE DATABASE IF NOT EXISTS spark_catalog.{database_name}")
+            logger.info(f"Database spark_catalog.{database_name} mirrored for IcebergConverter.")
         except Exception as e:
             logger.error("An error occurred while creating the database: %s", str(e))
             raise e
@@ -88,6 +103,9 @@ class BaseProcessor(ABC):
                     [f"`{field.name}` {field.dataType.simpleString()}{'' if field.nullable else ' NOT NULL'}"
                      for field in schema.fields]
                 )
+
+                # Step 1: Create the UC table WITHOUT Iceberg properties first
+                # (so IcebergConverter post-commit hook does not fire yet).
                 create_sql = (
                     f"CREATE TABLE IF NOT EXISTS {table_two_part_name} "
                     f"({columns_ddl}) "
@@ -97,6 +115,42 @@ class BaseProcessor(ABC):
                 )
                 spark.sql(create_sql)
                 logger.info(f"Table {catalog_location} created successfully.")
+
+                # Step 2: Mirror table in spark_catalog so Delta IcebergConverter
+                # post-commit hook can find it (it uses SessionCatalog internally).
+                # Uses CREATE TABLE pointing to the existing Delta location.
+                mirror_sql = (
+                    f"CREATE TABLE IF NOT EXISTS spark_catalog.{table_two_part_name} "
+                    f"USING DELTA "
+                    f"LOCATION '{catalog_location}'"
+                )
+                spark.sql(mirror_sql)
+                logger.info(f"Table spark_catalog.{table_two_part_name} mirrored for IcebergConverter.")
+
+                # Step 3: Enable Iceberg UniForm via ALTER TABLE on spark_catalog mirror.
+                # UCSingleCatalog v0.2.1 does not implement alterTable(), so we
+                # ALTER the spark_catalog mirror which shares the same Delta location.
+                # The IcebergConverter post-commit hook will find the table in spark_catalog.
+                # First set columnMapping.mode = 'name' (required by IcebergCompatV2)
+                # AND upgrade the Delta protocol to (2,5) which columnMapping requires.
+                # The table is created at Protocol(1,2) by default, but columnMapping
+                # needs minReaderVersion=2, minWriterVersion=5.
+                spark.sql(
+                    f"ALTER TABLE spark_catalog.{table_two_part_name} SET TBLPROPERTIES ("
+                    f"'delta.columnMapping.mode' = 'name', "
+                    f"'delta.minReaderVersion' = '2', "
+                    f"'delta.minWriterVersion' = '5'"
+                    f")"
+                )
+                # Step 3b: Use REORG TABLE to upgrade to IcebergCompatV2.
+                # A plain ALTER TABLE SET TBLPROPERTIES fails with
+                # DELTA_ICEBERG_COMPAT_VIOLATION.CHANGE_VERSION_NEED_REWRITE
+                # because existing Parquet files must be rewritten for Iceberg compat.
+                spark.sql(
+                    f"REORG TABLE spark_catalog.{table_two_part_name} "
+                    f"APPLY (UPGRADE UNIFORM(ICEBERG_COMPAT_VERSION = 2))"
+                )
+                logger.info(f"Table {table_two_part_name} Iceberg UniForm enabled.")
             else:
                 logger.info(f"Table {catalog_location} already exists.")
             return DeltaTable.forPath(spark, catalog_location)
